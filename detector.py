@@ -62,5 +62,3 @@ for ip in ipInfo.keys():
 	# big enough to put the ip under suspision
 	if ipInfo[ip][0] > 3*ipInfo[ip][1] and abs(synCount-synAckCount) > 2:
 		print ip
-		print synCount
-		print synAckCount
