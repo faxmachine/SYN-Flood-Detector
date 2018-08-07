@@ -1,64 +1,74 @@
-# Ben Carroll CS 460
-# NOTE: this program will produce the correct answers. It will take a minute to run though
-
+#!/usr/bin/env python2
 import sys
 import dpkt
 import socket
 
-f = open(sys.argv[1])
-pcap = dpkt.pcap.Reader(f)
-ipInfo = {}
-
-# This method will convert inet to and ip string
-# There is a very similar example method in the dpkt Github repo
-def ipToString(ip):
+def ip_to_string(ip):
+	"""
+	Converts inet to an ip string
+	There is a very similar example method in the dpkt Github repo
+	"""
 	try:
 		return socket.inet_ntop(socket.AF_INET, ip)
 	except ValueError:
 		return socket.inet_ntop(socket.AF_INET6, ip)
 
-for ts, buf in pcap:
-	try:
-		eth = dpkt.ethernet.Ethernet(buf)
+def populate_ip_info(ip_info):
+	""" 
+	Populates the ip_info dictionary with TCP flag information
+	"""
 
-		# check to see if the packet uses IP and TCP
-		if type(eth.data) != dpkt.ip.IP:	continue
-		ip = eth.data
-		if type(ip.data) != dpkt.tcp.TCP:	continue
-		tcp = ip.data
+	for ts, buf in pcap:
+		try:
+			eth = dpkt.ethernet.Ethernet(buf)
 
-		# extract flags from TCP data
-		synFlag = ( tcp.flags & dpkt.tcp.TH_SYN ) != 0
-		ackFlag = ( tcp.flags & dpkt.tcp.TH_ACK ) != 0
+			# check to see if the packet uses IP and TCP
+			if type(eth.data) != dpkt.ip.IP:	continue
+			ip = eth.data
+			if type(ip.data) != dpkt.tcp.TCP:	continue
+			tcp = ip.data
 
-		# get IP addresses
-		ipSrc = ipToString(ip.src)
-		ipDst = ipToString(ip.dst)
+			# extract flags from TCP data
+			synFlag = ( tcp.flags & dpkt.tcp.TH_SYN ) != 0
+			ackFlag = ( tcp.flags & dpkt.tcp.TH_ACK ) != 0
 
-		# if there is a SYN+ACK packet update the SYN+ACK count for the dst address
-		if synFlag and ackFlag:
-			if ipDst not in ipInfo:
-				ipInfo[ipDst] = (0, int(synFlag and ackFlag))
-			else:
-				ipInfo[ipDst] = (ipInfo[ipDst][0], ipInfo[ipDst][1]+int(synFlag and ackFlag))
+			# get IP addresses
+			ipSrc = ip_to_string(ip.src)
+			ipDst = ip_to_string(ip.dst)
 
-		# if there is a SYN packet update the SYN count for the src address
-		if synFlag and ackFlag == False:
-			if ipSrc not in ipInfo:
-				ipInfo[ipSrc] = (int(synFlag), 0)
-			else:
-				ipInfo[ipSrc] = (ipInfo[ipSrc][0]+int(synFlag), ipInfo[ipSrc][1])
-	
-	# if a packet throws a parsing expection, ignore that packet
-	except dpkt.dpkt.NeedData:
-		pass
+			# if there is a SYN+ACK packet update the SYN+ACK count for the dst address
+			if synFlag and ackFlag:
+				if ipDst not in ip_info:
+					ip_info[ipDst] = (0, int(synFlag and ackFlag))
+				else:
+					ip_info[ipDst] = (ip_info[ipDst][0], ip_info[ipDst][1]+int(synFlag and ackFlag))
 
-# iterate through the ips and print those that satisfy our threat condition
-for ip in ipInfo.keys():
-	synCount = ipInfo[ip][0]
-	synAckCount = ipInfo[ip][1]
+			# if there is a SYN packet update the SYN count for the src address
+			if synFlag and ackFlag == False:
+				if ipSrc not in ip_info:
+					ip_info[ipSrc] = (int(synFlag), 0)
+				else:
+					ip_info[ipSrc] = (ip_info[ipSrc][0]+int(synFlag), ip_info[ipSrc][1])
+		
+		# if a packet throws a parsing expection, ignore that packet
+		except dpkt.dpkt.NeedData:
+			pass
 
-	# Here abs(synCount-synAckCount) > 2 will check to see if the SYN and SYN+ACK difference is
-	# big enough to put the ip under suspision
-	if ipInfo[ip][0] > 3*ipInfo[ip][1] and abs(synCount-synAckCount) > 2:
-		print ip
+if __name__ == '__main__':
+	f = open(sys.argv[1])
+	pcap = dpkt.pcap.Reader(f)
+	ip_info = {}
+
+	print "extracting IP info... this might take a minute"
+	populate_ip_info(ip_info)
+
+	# iterate through the ips and print those that satisfy our threat condition
+	print "suspicious IPs:"
+	for ip in ip_info.keys():
+		synCount = ip_info[ip][0]
+		synAckCount = ip_info[ip][1]
+
+		# Here abs(synCount-synAckCount) > 2 will check to see if the SYN and SYN+ACK difference is
+		# big enough to put the ip under suspicion
+		if ip_info[ip][0] > 3*ip_info[ip][1] and abs(synCount-synAckCount) > 2:
+			print ip
